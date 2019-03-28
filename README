@@ -1,0 +1,44 @@
+Below are the sample schema that needs to be created using HDFS. So that it can be mapped with hive
+
+crps
+
+CREATE TABLE crps (acc_no String,adrLine1 String, adrLine2 String, city String, state String, zip String,time_stamp String)
+ROW FORMAT DELIMITED
+FIELDS TERMINATED BY ':';
+
+LOAD DATA LOCAL INPATH '/home/ajay/hive_files/source1'
+OVERWRITE INTO TABLE crps;
+------------------------------
+triumph
+
+CREATE TABLE triumph LIKE crps;
+
+LOAD DATA LOCAL INPATH '/home/ajay/hive_files/source2' OVERWRITE INTO TABLE triumph;
+----------------------
+CREATE TABLE match LIKE crps;
+CREATE TABLE mismatch_old LIKE crps;
+CREATE TABLE mismatch_new LIKE crps;
+
+ADD JAR /usr/local/hive/lib/CompareTables2.jar;
+CREATE TEMPORARY FUNCTION masterCompare1 AS 'sample1.MasterCmp';
+
+
+
+masterCompare1(s1.adrLine1, s1.adrLine2,s2.adrLine1, s2.adrLine1, s1.city , s2.city, s1.state, s2.state, s1.zip, s2.zip)
+
+FROM crps s1 JOIN triumph s2 ON (s1.acc_no=s2.acc_no)
+INSERT OVERWRITE TABLE match
+SELECT s1.acc_no, s1.adrLine1, s1.adrLine2 , s1.city , s1.state,s1.zip,s1.time_stamp
+WHERE masterCompare1(s1.adrLine1, s1.adrLine2,s2.adrLine1, s2.adrLine2, s1.city , s2.city, s1.state, s2.state, s1.zip, s2.zip) == 1
+
+INSERT OVERWRITE TABLE mismatch_old
+SELECT s1.acc_no, s1.adrLine1, s1.adrLine2 , s1.city , s1.state,s1.zip,s1.time_stamp
+WHERE (masterCompare1(s1.adrLine1, s1.adrLine2,s2.adrLine1, s2.adrLine2, s1.city , s2.city, s1.state, s2.state, s1.zip, s2.zip) != 1) AND s1.time_stamp > s2.time_stamp
+
+INSERT OVERWRITE TABLE mismatch_new
+SELECT s1.acc_no, s1.adrLine1, s1.adrLine2 , s1.city , s1.state,s1.zip,s1.time_stamp
+WHERE (masterCompare1(s1.adrLine1, s1.adrLine2,s2.adrLine1, s2.adrLine2, s1.city , s2.city, s1.state, s2.state, s1.zip, s2.zip) != 1) AND s1.time_stamp < s2.time_stamp;
+
+dfs -rmr /user/hive/warehouse/match;
+dfs -rmr /user/hive/warehouse/mismatch_new;
+dfs -rmr /user/hive/warehouse/mismatch_old;
